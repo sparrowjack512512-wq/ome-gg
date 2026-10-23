@@ -19,7 +19,7 @@ from selenium.common.exceptions import (
 )
 from webdriver_manager.chrome import ChromeDriverManager
 
-# Make every print() flush immediately so Render logs show it
+# Flush every print so Render logs show it immediately
 print = functools.partial(print, flush=True)
 
 # ============================================================
@@ -37,7 +37,7 @@ MESSAGES = [
 XPATH_GENDER_MALE    = "//button[normalize-space()='Male']"
 XPATH_AGE_CHECKBOX   = "//label[contains(., '18 years of age')]//input[@type='checkbox']"
 XPATH_TERMS_CHECKBOX = "//label[contains(., 'Terms') and contains(., 'Privacy')]//input[@type='checkbox']"
-XPATH_AGREE_BUTTON   = "//button[contains(normalize-space(), \"Let's Go\")]"
+XPATH_AGREE_BUTTON   = "//button[normalize-space()=\"I Agree, Let's Go\"]"
 XPATH_START_TEXT_CHAT = "//button[contains(normalize-space(), 'Start Text Chat')]"
 
 SEL_MESSAGE_INPUT   = "div[data-composer='true'] textarea"
@@ -124,23 +124,37 @@ def complete_onboarding(driver, wait):
         print("[onboarding] terms checkbox not found")
         return False
 
-    # --- No GateSolve: just wait for the agree button to become enabled ---
+    # --- Find the agree button and report its disabled state ---
     try:
         agree_btn = wait.until(EC.presence_of_element_located((By.XPATH, XPATH_AGREE_BUTTON)))
-        print(f"[onboarding] waiting for Turnstile / agree button to become enabled (up to {TURNSTILE_WAIT}s)…")
-        end = time.time() + TURNSTILE_WAIT
-        while agree_btn.get_attribute("disabled") is not None and time.time() < end:
-            time.sleep(1.0)
-        if agree_btn.get_attribute("disabled") is not None:
-            print(f"[onboarding] agree button still disabled after {TURNSTILE_WAIT}s — aborting")
-            return False
-        print("[onboarding] agree button is enabled — clicking")
-        safe_click(driver, wait, By.XPATH, XPATH_AGREE_BUTTON, timeout=5)
-        print("[onboarding] clicked 'I Agree, Let's Go'")
-        return True
+        print(f"[onboarding] agree button found, disabled={agree_btn.get_attribute('disabled')!r}")
     except TimeoutException:
         print("[onboarding] agree button not found")
+        # Dump all buttons so we can see what's really on the page
+        print("[debug] dumping all buttons:")
+        try:
+            for b in driver.find_elements(By.TAG_NAME, "button"):
+                try:
+                    print(f"  button text={b.text!r} disabled={b.get_attribute('disabled')!r}")
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"  dump error: {e}")
         return False
+
+    # --- Wait for Turnstile to enable the button ---
+    print(f"[onboarding] waiting for Turnstile to enable the button (up to {TURNSTILE_WAIT}s)…")
+    end = time.time() + TURNSTILE_WAIT
+    while agree_btn.get_attribute("disabled") is not None and time.time() < end:
+        time.sleep(1.0)
+    if agree_btn.get_attribute("disabled") is not None:
+        print(f"[onboarding] agree button still disabled after {TURNSTILE_WAIT}s — aborting")
+        return False
+
+    print("[onboarding] agree button is enabled — clicking")
+    safe_click(driver, wait, By.XPATH, XPATH_AGREE_BUTTON, timeout=5)
+    print("[onboarding] clicked 'I Agree, Let's Go'")
+    return True
 
 def wait_for_page_two(driver, timeout=REDIRECT_TIMEOUT):
     try:
