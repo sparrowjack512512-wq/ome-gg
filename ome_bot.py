@@ -2,6 +2,7 @@ import time
 import random
 import os
 import threading
+import functools
 from flask import Flask
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -17,6 +18,9 @@ from selenium.common.exceptions import (
     ElementClickInterceptedException,
 )
 from webdriver_manager.chrome import ChromeDriverManager
+
+# Make every print() flush immediately so Render logs show it
+print = functools.partial(print, flush=True)
 
 # ============================================================
 # CONFIG
@@ -53,6 +57,7 @@ REDIRECT_TIMEOUT     = 30
 # DRIVER & HELPERS
 # ============================================================
 def build_driver():
+    print("[driver] building options...")
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
@@ -63,8 +68,12 @@ def build_driver():
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
 
+    print("[driver] resolving chromedriver...")
     service = Service(ChromeDriverManager().install())
+    print("[driver] launching Chrome...")
     driver = webdriver.Chrome(service=service, options=options)
+    print("[driver] Chrome launched")
+
     driver.execute_cdp_cmd(
         "Page.addScriptToEvaluateOnNewDocument",
         {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"},
@@ -95,6 +104,7 @@ def complete_onboarding(driver, wait):
     if not safe_click(driver, wait, By.XPATH, XPATH_GENDER_MALE, timeout=15):
         print("[onboarding] gender button not found")
         return False
+    print("[onboarding] male selected")
 
     try:
         age_cb = wait.until(EC.presence_of_element_located((By.XPATH, XPATH_AGE_CHECKBOX)))
@@ -114,7 +124,7 @@ def complete_onboarding(driver, wait):
         print("[onboarding] terms checkbox not found")
         return False
 
-    # --- NO GateSolve — just wait for the agree button to become enabled ---
+    # --- No GateSolve: just wait for the agree button to become enabled ---
     try:
         agree_btn = wait.until(EC.presence_of_element_located((By.XPATH, XPATH_AGREE_BUTTON)))
         print(f"[onboarding] waiting for Turnstile / agree button to become enabled (up to {TURNSTILE_WAIT}s)…")
@@ -206,11 +216,16 @@ def one_cycle(driver, wait, cycle_num, first_cycle=False):
     return True
 
 def run_bot():
-    driver = build_driver()
-    wait = WebDriverWait(driver, 15)
-    searching = False
+    print("[bot] run_bot thread started")
+    driver = None
     try:
+        driver = build_driver()
+        print("[bot] driver ready — navigating")
+        wait = WebDriverWait(driver, 15)
+        searching = False
+
         driver.get(SITE_URL)
+        print("[bot] page loaded:", driver.title)
         time.sleep(random.uniform(2, 4))
 
         if not complete_onboarding(driver, wait):
@@ -237,7 +252,8 @@ def run_bot():
                     time.sleep(3)
                 except Exception:
                     print("driver dead, restarting")
-                    driver.quit()
+                    try: driver.quit()
+                    except Exception: pass
                     driver = build_driver()
                     wait = WebDriverWait(driver, 15)
                     driver.get(SITE_URL)
@@ -247,8 +263,12 @@ def run_bot():
             time.sleep(random.uniform(*DELAY_BETWEEN_CYCLES))
     except KeyboardInterrupt:
         print("\nstopped by user")
+    except Exception as e:
+        print(f"[bot] fatal error: {e}")
     finally:
-        driver.quit()
+        if driver:
+            try: driver.quit()
+            except Exception: pass
 
 # ============================================================
 # FLASK HEALTH CHECK
@@ -260,6 +280,8 @@ def health():
     return "ome bot running", 200
 
 if __name__ == "__main__":
+    print("[main] starting bot thread")
     threading.Thread(target=run_bot, daemon=True).start()
+    print("[main] bot thread launched, starting Flask")
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
