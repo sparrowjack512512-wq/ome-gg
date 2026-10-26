@@ -155,7 +155,25 @@ def complete_onboarding(driver, wait):
         print("[onboarding] terms checkbox not found")
         return False
 
+    # ---------- DEBUG DUMP ----------
     time.sleep(2.0)
+    print("[debug] URL:", driver.current_url)
+    print("[debug] title:", driver.title)
+    print("[debug] agree button present:",
+          len(driver.find_elements(By.XPATH, XPATH_AGREE_BUTTON)) > 0)
+    print("[debug] start text chat present:",
+          len(driver.find_elements(By.XPATH, XPATH_START_TEXT_CHAT)) > 0)
+    try:
+        for b in driver.find_elements(By.TAG_NAME, "button"):
+            try:
+                txt = (b.text or "").strip()
+                if txt:
+                    print(f"[debug] button: '{txt}' disabled={b.get_attribute('disabled')}")
+            except StaleElementReferenceException:
+                pass
+    except Exception as e:
+        print("[debug] button dump failed:", e)
+    # --------------------------------
 
     if _on_page_two(driver):
         print("[onboarding] auto-redirected to page 2 after checkboxes")
