@@ -29,6 +29,8 @@ from selenium_turnstile import solve_turnstile
 # CONFIG
 # ============================================================
 SITE_URL = "https://ome.gg/app/chat"
+# Turnstile solve requires URL with trailing slash
+TURNSTILE_URL = "https://ome.gg/app/chat/"
 
 MESSAGES = ["Hiiii", "F", "Talk to me on Chitmet gg", "Lisaa982"]
 
@@ -151,7 +153,13 @@ def complete_onboarding(driver, wait):
 
     print("[onboarding] calling Peak to solve Turnstile...")
     try:
-        solve_turnstile(driver, api_key=os.environ.get("PEAK_API_KEY"), sitekey=TURNSTILE_SITEKEY)
+        # Key fix: pass url (with trailing slash), omit proxy for proxyless mode
+        solve_turnstile(
+            driver,
+            api_key=os.environ.get("PEAK_API_KEY"),
+            sitekey=TURNSTILE_SITEKEY,
+            url=TURNSTILE_URL,
+        )
         print("[onboarding] Peak solve succeeded")
     except Exception as e:
         print(f"[onboarding] Peak solve failed: {e}")
