@@ -155,14 +155,29 @@ def complete_onboarding(driver, wait):
         print("[onboarding] terms checkbox not found")
         return False
 
-    # ---------- DEBUG DUMP ----------
-    time.sleep(2.0)
+    # Turnstile is now running. It may show a "Checking you're not a bot…"
+    # button while verifying, then either reveal "I Agree, Let's Go" or
+    # redirect straight to page 2. Poll for up to TURNSTILE_WAIT seconds.
+    print(f"[onboarding] waiting for Turnstile to complete (up to {TURNSTILE_WAIT}s)...")
+    end = time.time() + TURNSTILE_WAIT
+    while time.time() < end:
+        if _on_page_two(driver):
+            print("[onboarding] redirected to page 2")
+            return True
+
+        agree_buttons = driver.find_elements(By.XPATH, XPATH_AGREE_BUTTON)
+        if agree_buttons:
+            try:
+                if agree_buttons[0].get_attribute("disabled") is None:
+                    safe_click(driver, wait, By.XPATH, XPATH_AGREE_BUTTON, timeout=5)
+                    print("[onboarding] clicked 'I Agree, Let's Go'")
+                    return True
+            except StaleElementReferenceException:
+                pass
+        time.sleep(1.0)
+
+    print("[onboarding] Turnstile did not complete within wait window")
     print("[debug] URL:", driver.current_url)
-    print("[debug] title:", driver.title)
-    print("[debug] agree button present:",
-          len(driver.find_elements(By.XPATH, XPATH_AGREE_BUTTON)) > 0)
-    print("[debug] start text chat present:",
-          len(driver.find_elements(By.XPATH, XPATH_START_TEXT_CHAT)) > 0)
     try:
         for b in driver.find_elements(By.TAG_NAME, "button"):
             try:
@@ -173,45 +188,7 @@ def complete_onboarding(driver, wait):
                 pass
     except Exception as e:
         print("[debug] button dump failed:", e)
-    # --------------------------------
-
-    if _on_page_two(driver):
-        print("[onboarding] auto-redirected to page 2 after checkboxes")
-        return True
-
-    try:
-        agree_btn = WebDriverWait(driver, TURNSTILE_WAIT).until(
-            EC.presence_of_element_located((By.XPATH, XPATH_AGREE_BUTTON))
-        )
-    except TimeoutException:
-        if _on_page_two(driver):
-            print("[onboarding] page redirected while waiting for agree button")
-            return True
-        print("[onboarding] agree button not found")
-        return False
-
-    print(f"[onboarding] waiting for agree button to enable (up to {TURNSTILE_WAIT}s)...")
-    end = time.time() + TURNSTILE_WAIT
-    while time.time() < end:
-        if _on_page_two(driver):
-            print("[onboarding] page redirected while waiting")
-            return True
-        try:
-            if agree_btn.get_attribute("disabled") is None:
-                break
-        except StaleElementReferenceException:
-            if _on_page_two(driver):
-                print("[onboarding] page redirected while waiting")
-                return True
-            return False
-        time.sleep(1.0)
-    else:
-        print("[onboarding] agree button still disabled after wait")
-        return False
-
-    safe_click(driver, wait, By.XPATH, XPATH_AGREE_BUTTON, timeout=5)
-    print("[onboarding] clicked 'I Agree, Let's Go'")
-    return True
+    return False
 
 
 def wait_for_page_two(driver, timeout=REDIRECT_TIMEOUT):
