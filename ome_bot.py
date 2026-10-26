@@ -23,14 +23,11 @@ from selenium.common.exceptions import (
     WebDriverException,
     ElementClickInterceptedException,
 )
-from selenium_turnstile import solve_turnstile
 
 # ============================================================
 # CONFIG
 # ============================================================
 SITE_URL = "https://ome.gg/app/chat"
-# Turnstile solve requires URL with trailing slash
-TURNSTILE_URL = "https://ome.gg/app/chat/"
 
 MESSAGES = ["Hiiii", "F", "Talk to me on Chitmet gg", "Lisaa982"]
 
@@ -53,7 +50,6 @@ MAX_CYCLES           = 50
 TURNSTILE_WAIT       = 120
 REDIRECT_TIMEOUT     = 30
 
-TURNSTILE_SITEKEY    = "0x4AAAAAAFVjrJjtptnsldQj"
 CHROMEDRIVER_PATH    = "/usr/local/bin/chromedriver"
 CHROME_MAJOR_VERSION = 156
 # ============================================================
@@ -132,6 +128,7 @@ def human_type(element, text):
 def complete_onboarding(driver, wait):
     print("[onboarding] starting")
     if not safe_click(driver, wait, By.XPATH, XPATH_GENDER_MALE, timeout=15):
+        print("[onboarding] gender button not found")
         return False
     print("[onboarding] male selected")
 
@@ -141,6 +138,7 @@ def complete_onboarding(driver, wait):
             age_cb.click()
         print("[onboarding] 18+ checked")
     except TimeoutException:
+        print("[onboarding] 18+ checkbox not found")
         return False
 
     try:
@@ -149,34 +147,24 @@ def complete_onboarding(driver, wait):
             terms_cb.click()
         print("[onboarding] terms checked")
     except TimeoutException:
+        print("[onboarding] terms checkbox not found")
         return False
 
-    print("[onboarding] calling Peak to solve Turnstile...")
-    try:
-        # Key fix: pass url (with trailing slash), omit proxy for proxyless mode
-        solve_turnstile(
-            driver,
-            api_key=os.environ.get("PEAK_API_KEY"),
-            sitekey=TURNSTILE_SITEKEY,
-            url=TURNSTILE_URL,
-        )
-        print("[onboarding] Peak solve succeeded")
-    except Exception as e:
-        print(f"[onboarding] Peak solve failed: {e}")
-        return False
-
+    # Turnstile now uses the always-pass test key — no solver needed.
     try:
         agree_btn = wait.until(EC.presence_of_element_located((By.XPATH, XPATH_AGREE_BUTTON)))
-        print(f"[onboarding] waiting for agree button (up to {TURNSTILE_WAIT}s)...")
+        print(f"[onboarding] waiting for agree button to enable (up to {TURNSTILE_WAIT}s)...")
         end = time.time() + TURNSTILE_WAIT
         while agree_btn.get_attribute("disabled") is not None and time.time() < end:
             time.sleep(1.0)
         if agree_btn.get_attribute("disabled") is not None:
+            print("[onboarding] agree button still disabled after wait")
             return False
         safe_click(driver, wait, By.XPATH, XPATH_AGREE_BUTTON, timeout=5)
         print("[onboarding] clicked 'I Agree, Let's Go'")
         return True
     except TimeoutException:
+        print("[onboarding] agree button not found")
         return False
 
 
@@ -203,7 +191,9 @@ def convo_bar_gone(driver):
 def send_message(driver, wait, text):
     try:
         box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, SEL_MESSAGE_INPUT)))
-        box.click(); box.clear(); human_type(box, text)
+        box.click()
+        box.clear()
+        human_type(box, text)
         time.sleep(random.uniform(0.3, 0.8))
         if not safe_click(driver, wait, By.CSS_SELECTOR, SEL_SEND_BUTTON, timeout=3):
             box.send_keys(Keys.ENTER)
@@ -217,19 +207,23 @@ def one_cycle(driver, wait, cycle_num, first_cycle=False):
     print(f"\n=== cycle {cycle_num} ===")
     if first_cycle:
         if not safe_click(driver, wait, By.XPATH, XPATH_START_TEXT_CHAT, timeout=15):
+            print("  could not find 'Start Text Chat'")
             return False
         print("  clicked Start Text Chat")
     else:
         print("  auto-search already running — waiting for match")
 
     if not wait_for_convo_bar(driver, CONNECT_TIMEOUT):
+        print(f"  no match within {CONNECT_TIMEOUT}s — retrying")
         return False
     print("  matched!")
 
     for i, msg in enumerate(MESSAGES):
         if convo_bar_gone(driver):
+            print("  stranger left before we finished")
             return False
         if not send_message(driver, wait, msg):
+            print(f"  failed sending message {i+1}")
             return False
         print(f"  sent: {msg!r}")
         time.sleep(DELAY_BETWEEN_MSGS)
@@ -279,12 +273,14 @@ def run_bot():
                 print(f"[cycle {i}] webdriver error: {e} — recovering")
                 searching = False
                 try:
-                    bot_driver.get(SITE_URL); time.sleep(3)
+                    bot_driver.get(SITE_URL)
+                    time.sleep(3)
                 except Exception:
                     bot_driver.quit()
                     bot_driver = build_driver()
                     bot_wait = WebDriverWait(bot_driver, 15)
-                    bot_driver.get(SITE_URL); time.sleep(3)
+                    bot_driver.get(SITE_URL)
+                    time.sleep(3)
             except Exception as e:
                 print(f"[cycle {i}] unexpected error: {e}")
             time.sleep(random.uniform(*DELAY_BETWEEN_CYCLES))
@@ -293,17 +289,21 @@ def run_bot():
         traceback.print_exc()
     finally:
         if bot_driver:
-            try: bot_driver.quit()
-            except Exception: pass
+            try:
+                bot_driver.quit()
+            except Exception:
+                pass
 
 
 @app.route("/")
 def index():
     return "Ome bot is running.", 200
 
+
 @app.route("/health")
 def health():
     return "ok", 200
+
 
 @app.route("/status")
 def status():
