@@ -125,13 +125,21 @@ def human_type(element, text):
         time.sleep(random.uniform(0.02, 0.08))
 
 
+def _on_page_two(driver):
+    """True if the 'Start Text Chat' button is currently on the page."""
+    return len(driver.find_elements(By.XPATH, XPATH_START_TEXT_CHAT)) > 0
+
+
 def complete_onboarding(driver, wait):
     print("[onboarding] starting")
+
+    # 1. Select Male
     if not safe_click(driver, wait, By.XPATH, XPATH_GENDER_MALE, timeout=15):
         print("[onboarding] gender button not found")
         return False
     print("[onboarding] male selected")
 
+    # 2. Check 18+
     try:
         age_cb = wait.until(EC.presence_of_element_located((By.XPATH, XPATH_AGE_CHECKBOX)))
         if not age_cb.is_selected():
@@ -141,6 +149,7 @@ def complete_onboarding(driver, wait):
         print("[onboarding] 18+ checkbox not found")
         return False
 
+    # 3. Check Terms
     try:
         terms_cb = wait.until(EC.presence_of_element_located((By.XPATH, XPATH_TERMS_CHECKBOX)))
         if not terms_cb.is_selected():
@@ -150,27 +159,58 @@ def complete_onboarding(driver, wait):
         print("[onboarding] terms checkbox not found")
         return False
 
-    # Turnstile now uses the always-pass test key — no solver needed.
-    try:
-        agree_btn = wait.until(EC.presence_of_element_located((By.XPATH, XPATH_AGREE_BUTTON)))
-        print(f"[onboarding] waiting for agree button to enable (up to {TURNSTILE_WAIT}s)...")
-        end = time.time() + TURNSTILE_WAIT
-        while agree_btn.get_attribute("disabled") is not None and time.time() < end:
-            time.sleep(1.0)
-        if agree_btn.get_attribute("disabled") is not None:
-            print("[onboarding] agree button still disabled after wait")
-            return False
-        safe_click(driver, wait, By.XPATH, XPATH_AGREE_BUTTON, timeout=5)
-        print("[onboarding] clicked 'I Agree, Let's Go'")
+    # Give the page a moment to react. With the test key, the site may
+    # auto-submit right after the second checkbox is checked.
+    time.sleep(2.0)
+
+    # If we've already landed on page 2, onboarding is done.
+    if _on_page_two(driver):
+        print("[onboarding] auto-redirected to page 2 after checkboxes")
         return True
+
+    # Otherwise, wait for the "I Agree, Let's Go" button to enable, then click it.
+    try:
+        agree_btn = wait.until(
+            EC.presence_of_element_located((By.XPATH, XPATH_AGREE_BUTTON)),
+            timeout=TURNSTILE_WAIT,
+        )
     except TimeoutException:
+        if _on_page_two(driver):
+            print("[onboarding] page redirected while waiting for agree button")
+            return True
         print("[onboarding] agree button not found")
         return False
+
+    print(f"[onboarding] waiting for agree button to enable (up to {TURNSTILE_WAIT}s)...")
+    end = time.time() + TURNSTILE_WAIT
+    while time.time() < end:
+        # Button may disappear if the page redirects while we poll
+        if _on_page_two(driver):
+            print("[onboarding] page redirected while waiting")
+            return True
+        try:
+            if agree_btn.get_attribute("disabled") is None:
+                break
+        except StaleElementReferenceException:
+            if _on_page_two(driver):
+                print("[onboarding] page redirected while waiting")
+                return True
+            return False
+        time.sleep(1.0)
+    else:
+        print("[onboarding] agree button still disabled after wait")
+        return False
+
+    safe_click(driver, wait, By.XPATH, XPATH_AGREE_BUTTON, timeout=5)
+    print("[onboarding] clicked 'I Agree, Let's Go'")
+    return True
 
 
 def wait_for_page_two(driver, timeout=REDIRECT_TIMEOUT):
     try:
-        WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.XPATH, XPATH_START_TEXT_CHAT)))
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.XPATH, XPATH_START_TEXT_CHAT))
+        )
         return True
     except TimeoutException:
         return False
@@ -178,7 +218,9 @@ def wait_for_page_two(driver, timeout=REDIRECT_TIMEOUT):
 
 def wait_for_convo_bar(driver, timeout):
     try:
-        WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.CSS_SELECTOR, SEL_CONVO_BAR)))
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, SEL_CONVO_BAR))
+        )
         return True
     except TimeoutException:
         return False
