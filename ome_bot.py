@@ -60,6 +60,7 @@ REDIRECT_TIMEOUT     = 30
 TURNSTILE_SITEKEY    = "0x4AAAAAAFVjrJjtptnsldQj"
 
 CHROMEDRIVER_PATH    = "/usr/local/bin/chromedriver"
+CHROME_MAJOR_VERSION = 156
 # ============================================================
 
 app = Flask(__name__)
@@ -71,7 +72,6 @@ def build_driver():
     """Launch undetected Chrome using the pre-installed chromedriver, with a hard timeout."""
     print("[driver] building options...")
 
-    # Log versions so a mismatch is obvious in the Render logs
     try:
         chrome_ver = subprocess.check_output(["google-chrome", "--version"]).decode().strip()
         driver_ver = subprocess.check_output([CHROMEDRIVER_PATH, "--version"]).decode().strip()
@@ -91,12 +91,13 @@ def build_driver():
             options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1080")
             options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_argument("--remote-debugging-port=9222")
 
             result["driver"] = uc.Chrome(
                 options=options,
                 driver_executable_path=CHROMEDRIVER_PATH,
-                version_main=None,
-                use_subprocess=False,
+                version_main=CHROME_MAJOR_VERSION,
+                use_subprocess=True,
             )
         except Exception as e:
             result["error"] = e
